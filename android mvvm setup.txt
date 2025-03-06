@@ -122,17 +122,37 @@ class EpgRepository @Inject constructor(
 }
 
 /*
- Step 7: Multi-language Support
+ Step 7: Mpesa API Integration
  */
-class LanguageManager(context: Context) {
-    private val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-    
-    fun setLanguage(language: String) {
-        prefs.edit().putString("language", language).apply()
-    }
-    
-    fun getLanguage(): String {
-        return prefs.getString("language", "en") ?: "en"
+interface MpesaApiService {
+    @POST("/mpesa/stkpush")
+    suspend fun initiatePayment(@Body paymentRequest: MpesaPaymentRequest): Response<MpesaPaymentResponse>
+}
+
+data class MpesaPaymentRequest(
+    val phoneNumber: String,
+    val amount: Double,
+    val accountReference: String,
+    val transactionDesc: String,
+    val consumerKey: String, // Added consumer key
+    val consumerSecret: String, // Added consumer secret
+    val accessToken: String // Added token-based authentication
+)
+
+data class MpesaPaymentResponse(
+    val responseCode: String,
+    val responseDescription: String,
+    val merchantRequestId: String,
+    val checkoutRequestId: String
+)
+
+@Singleton
+class MpesaRepository @Inject constructor(
+    private val apiService: MpesaApiService
+) {
+    suspend fun initiateMpesaPayment(paymentRequest: MpesaPaymentRequest): MpesaPaymentResponse? {
+        val response = apiService.initiatePayment(paymentRequest)
+        return response.body()
     }
 }
 
@@ -154,7 +174,7 @@ object FirebaseAuthUtil {
     private val db = FirebaseFirestore.getInstance()
     
     fun isValidKenyanPhoneNumber(phoneNumber: String): Boolean {
-        return phoneNumber.startsWith("+254") && phoneNumber.length == 13
+        return (phoneNumber.startsWith("+254") || phoneNumber.startsWith("07") || phoneNumber.startsWith("01")) && phoneNumber.length == 13
     }
 
     fun sendVerificationCode(phoneNumber: String, activity: Activity, callbacks: PhoneAuthProvider.OnVerificationStateChangedCallbacks) {
@@ -168,22 +188,5 @@ object FirebaseAuthUtil {
             .setCallbacks(callbacks)
             .build()
         PhoneAuthProvider.verifyPhoneNumber(options)
-    }
-}
-
-/*
- Step 10: M-Pesa API Integration
- */
-object MpesaApi {
-    private const val BASE_URL = "https://api.safaricom.co.ke/mpesa/"
-    private val client = OkHttpClient()
-
-    fun initiatePayment(phoneNumber: String, amount: Double) {
-        val requestBody = "{\"phoneNumber\":\"$phoneNumber\",\"amount\":$amount}".toRequestBody()
-        val request = Request.Builder()
-            .url(BASE_URL + "stkpush/v1/processrequest")
-            .post(requestBody)
-            .build()
-        client.newCall(request).execute()
     }
 }
