@@ -150,9 +150,28 @@ data class MpesaPaymentResponse(
 class MpesaRepository @Inject constructor(
     private val apiService: MpesaApiService
 ) {
-    suspend fun initiateMpesaPayment(paymentRequest: MpesaPaymentRequest): MpesaPaymentResponse? {
+    suspend fun initiateMpesaPayment(phoneNumber: String, amount: Double, accountReference: String, transactionDesc: String): MpesaPaymentResponse? {
+        val consumerKey = "JsR6sT37CftSKl4B3Bs3rY70WTp6Jkwb"
+        val consumerSecret = "fjAai57yjxBcMReN"
+        val accessToken = getMpesaAccessToken(consumerKey, consumerSecret) // Function to generate token
+        
+        val paymentRequest = MpesaPaymentRequest(
+            phoneNumber = phoneNumber,
+            amount = amount,
+            accountReference = accountReference,
+            transactionDesc = transactionDesc,
+            consumerKey = consumerKey,
+            consumerSecret = consumerSecret,
+            accessToken = accessToken
+        )
+        
         val response = apiService.initiatePayment(paymentRequest)
         return response.body()
+    }
+
+    private suspend fun getMpesaAccessToken(consumerKey: String, consumerSecret: String): String {
+        // Implement API call to fetch Mpesa token using consumerKey & consumerSecret
+        return "GENERATED_ACCESS_TOKEN"
     }
 }
 
