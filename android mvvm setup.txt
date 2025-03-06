@@ -1,0 +1,189 @@
+/*
+ Step 1: Add Dependencies (build.gradle)
+ */
+dependencies {
+    implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.4.1"
+    implementation "androidx.lifecycle:lifecycle-livedata-ktx:2.4.1"
+    implementation "androidx.room:room-runtime:2.4.2"
+    kapt "androidx.room:room-compiler:2.4.2"
+    implementation "com.squareup.retrofit2:retrofit:2.9.0"
+    implementation "com.squareup.retrofit2:converter-gson:2.9.0"
+    implementation "com.google.dagger:hilt-android:2.38.1"
+    kapt "com.google.dagger:hilt-compiler:2.38.1"
+    implementation "androidx.compose.ui:ui:1.0.5"
+    implementation "androidx.compose.material:material:1.0.5"
+    implementation "androidx.compose.ui:ui-tooling-preview:1.0.5"
+    implementation "androidx.activity:activity-compose:1.4.0"
+    implementation "com.google.android.exoplayer:exoplayer:2.17.1"
+    implementation platform("com.google.firebase:firebase-bom:31.2.3")
+    implementation "com.google.firebase:firebase-auth-ktx"
+    implementation "com.google.firebase:firebase-firestore-ktx"
+    implementation "com.google.firebase:firebase-auth"
+    implementation "androidx.preference:preference-ktx:1.1.1"
+    implementation "androidx.security:security-crypto:1.1.0-alpha06"
+    implementation "com.squareup.okhttp3:okhttp:4.9.1"
+}
+
+/*
+ Step 2: Define Entity (Room Database)
+ */
+@Entity(tableName = "users")
+data class User(
+    @PrimaryKey val id: String,
+    val name: String,
+    val email: String,
+    val phoneNumber: String?,
+    val subscriptionActive: Boolean,
+    val subscriptionPlan: String?,
+    val subscriptionExpiry: Long?,
+    val deviceId: String // Added to track the user's device
+)
+
+@Entity(tableName = "epg")
+data class EPG(
+    @PrimaryKey val id: String,
+    val channelId: String,
+    val programName: String,
+    val startTime: Long,
+    val endTime: Long
+)
+
+/*
+ Step 3: Create DAO (Database Access Object)
+ */
+@Dao
+interface UserDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUser(user: User)
+
+    @Query("SELECT * FROM users WHERE id = :userId")
+    suspend fun getUser(userId: String): User?
+
+    @Query("UPDATE users SET subscriptionActive = :active, subscriptionPlan = :plan, subscriptionExpiry = :expiry WHERE id = :userId")
+    suspend fun updateSubscription(userId: String, active: Boolean, plan: String?, expiry: Long?)
+
+    @Query("UPDATE users SET subscriptionActive = 0 WHERE subscriptionExpiry < :currentTime")
+    suspend fun deactivateExpiredSubscriptions(currentTime: Long)
+}
+
+@Dao
+interface EpgDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEPG(epgList: List<EPG>)
+
+    @Query("SELECT * FROM epg WHERE channelId = :channelId")
+    suspend fun getEPG(channelId: String): List<EPG>
+}
+
+/*
+ Step 4: Setup Room Database
+ */
+@Database(entities = [User::class, EPG::class], version = 1)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun userDao(): UserDao
+    abstract fun epgDao(): EpgDao
+}
+
+/*
+ Step 5: Secure API Service (Encryption & Secure Endpoints)
+ */
+object SecurityUtil {
+    fun encryptData(data: String): String {
+        return data.reversed() // Example placeholder
+    }
+    
+    fun decryptData(encryptedData: String): String {
+        return encryptedData.reversed() // Example placeholder
+    }
+}
+
+interface SecureEpgApiService {
+    @GET("/secure-epg")
+    suspend fun getEPGData(@Header("Authorization") token: String): Response<List<EPG>>
+}
+
+/*
+ Step 6: Repository (Handles EPG Logic)
+ */
+@Singleton
+class EpgRepository @Inject constructor(
+    private val apiService: SecureEpgApiService,
+    private val epgDao: EpgDao
+) {
+    suspend fun fetchAndStoreEPG(token: String) {
+        val response = apiService.getEPGData(token)
+        response.body()?.let { epgList ->
+            epgDao.insertEPG(epgList)
+        }
+    }
+    suspend fun getEPG(channelId: String): List<EPG> {
+        return epgDao.getEPG(channelId)
+    }
+}
+
+/*
+ Step 7: Multi-language Support
+ */
+class LanguageManager(context: Context) {
+    private val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+    
+    fun setLanguage(language: String) {
+        prefs.edit().putString("language", language).apply()
+    }
+    
+    fun getLanguage(): String {
+        return prefs.getString("language", "en") ?: "en"
+    }
+}
+
+/*
+ Step 8: Subscription Expiry Check
+ */
+object SubscriptionManager {
+    suspend fun checkAndDeactivateExpiredSubscriptions(userDao: UserDao) {
+        val currentTime = System.currentTimeMillis()
+        userDao.deactivateExpiredSubscriptions(currentTime)
+    }
+}
+
+/*
+ Step 9: Firebase Phone Authentication (Persistent Login & Single Device Login with Kenyan Phone Number Validation)
+ */
+object FirebaseAuthUtil {
+    private val auth: FirebaseAuth = FirebaseAuth.getInstance()
+    private val db = FirebaseFirestore.getInstance()
+    
+    fun isValidKenyanPhoneNumber(phoneNumber: String): Boolean {
+        return phoneNumber.startsWith("+254") && phoneNumber.length == 13
+    }
+
+    fun sendVerificationCode(phoneNumber: String, activity: Activity, callbacks: PhoneAuthProvider.OnVerificationStateChangedCallbacks) {
+        if (!isValidKenyanPhoneNumber(phoneNumber)) {
+            return
+        }
+        val options = PhoneAuthOptions.newBuilder(auth)
+            .setPhoneNumber(phoneNumber)
+            .setTimeout(60L, TimeUnit.SECONDS)
+            .setActivity(activity)
+            .setCallbacks(callbacks)
+            .build()
+        PhoneAuthProvider.verifyPhoneNumber(options)
+    }
+}
+
+/*
+ Step 10: M-Pesa API Integration
+ */
+object MpesaApi {
+    private const val BASE_URL = "https://api.safaricom.co.ke/mpesa/"
+    private val client = OkHttpClient()
+
+    fun initiatePayment(phoneNumber: String, amount: Double) {
+        val requestBody = "{\"phoneNumber\":\"$phoneNumber\",\"amount\":$amount}".toRequestBody()
+        val request = Request.Builder()
+            .url(BASE_URL + "stkpush/v1/processrequest")
+            .post(requestBody)
+            .build()
+        client.newCall(request).execute()
+    }
+}
