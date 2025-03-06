@@ -151,8 +151,8 @@ class MpesaRepository @Inject constructor(
     private val apiService: MpesaApiService
 ) {
     suspend fun initiateMpesaPayment(phoneNumber: String, amount: Double, accountReference: String, transactionDesc: String): MpesaPaymentResponse? {
-        val consumerKey = "JsR6sT37CftSKl4B3Bs3rY70WTp6Jkwb"
-        val consumerSecret = "fjAai57yjxBcMReN"
+        val consumerKey = "YOUR_CONSUMER_KEY"
+        val consumerSecret = "YOUR_CONSUMER_SECRET"
         val accessToken = getMpesaAccessToken(consumerKey, consumerSecret) // Function to generate token
         
         val paymentRequest = MpesaPaymentRequest(
@@ -174,6 +174,7 @@ class MpesaRepository @Inject constructor(
         return "GENERATED_ACCESS_TOKEN"
     }
 }
+
 
 /*
  Step 8: Subscription Expiry Check
